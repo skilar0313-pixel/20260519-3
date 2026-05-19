@@ -18,9 +18,39 @@ const GESTURES = {
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
-  // 暫時移除攝影機初始化，改用鍵盤模擬測試畫面
-  console.log("遊戲啟動 (測試模式)");
-  console.log("模擬手勢操作：數字鍵 1(石頭), 2(布), 3(剪刀), 4(繼續), 5(結束)");
+
+  // 初始化攝影機 (不使用 p5 的 createCapture 以避免衝突)
+  capture = document.createElement('video');
+  capture.setAttribute('playsinline', '');
+  capture.width = 640;
+  capture.height = 480;
+
+  // 初始化 MediaPipe Hands
+  hands = new Hands({
+    locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }
+  });
+
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.7
+  });
+
+  hands.onResults(onResults);
+
+  // 啟動攝影機工具
+  const camera = new Camera(capture, {
+    onFrame: async () => {
+      await hands.send({ image: capture });
+    },
+    width: 640,
+    height: 480
+  });
+
+  camera.start().catch(err => console.error("無法啟動攝影機: ", err));
 }
 
 function onResults(results) {
@@ -62,24 +92,42 @@ function classifyHand(landmarks) {
 }
 
 function draw() {
-  background(255, 220, 230); // 換成粉嫩的粉紅色底
+  // 1. 繪製攝影機畫面 (鏡像處理)
+  push();
+  translate(width, 0);
+  scale(-1, 1);
+  image(capture, 0, 0, width, height);
+  
+  // 2. 處理手勢數據並畫出偵測點
+  if (predictions && predictions.length > 0) {
+    playerHand = classifyHand(predictions[0]);
+    fill(255, 100, 150); // 偵測點也用粉色
+    noStroke();
+    for (let p of predictions[0]) {
+      ellipse(p.x * width, p.y * height, 10, 10);
+    }
+  } else {
+    playerHand = 'None';
+  }
+  pop();
 
-  // 繪製裝飾小愛心
+  // 3. 覆蓋粉嫩半透明層與裝飾
+  fill(255, 220, 230, 180); // 180 為透明度，讓攝影機畫面若隱若現
+  rect(0, 0, width, height);
+
   drawDecoration();
 
   // 遊戲畫面 UI
   textAlign(CENTER, CENTER);
-  fill(255);
-  textSize(20);
   fill(150, 100, 120);
-  text(`[測試模式] 數字鍵 1,2,3 出拳 | 4:繼續 | 5:結束`, width / 2, 40);
-  text(`目前偵測狀態：${playerHand}`, width / 2, 70);
+  textSize(24);
+  text(`目前手勢：${playerHand}`, width / 2, 50);
   
   if (gameState === 'READY') {
     fill(255, 150, 180, 180); 
     rect(width / 2 - 250, height / 2 - 60, 500, 120, 20);
     fill(255); textSize(40);
-    text("準備出拳 ❤️ (1/2/3)", width/2, height/2);
+    text("準備好就出拳 ❤️", width/2, height/2);
 
     if (playerHand === GESTURES.ROCK || playerHand === GESTURES.PAPER || playerHand === GESTURES.SCISSORS) {
       gameState = 'COUNTDOWN';
